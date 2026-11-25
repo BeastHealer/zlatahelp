@@ -1,0 +1,66 @@
+Создай полноценный CLI-инструмент на Python, который делает запросы в GigaChat API и получает выжимку (summary) по текстовым сообщениям.
+
+Требования:
+
+1. Стек:
+   - Python 3.10+
+   - requests (для HTTP-запросов)
+   - argparse (для CLI-интерфейса)
+   - dotenv (для хранения токена)
+
+2. Структура проекта:
+   /project
+     main.py — CLI-приложение
+     gigachat.py — модуль для работы с API GigaChat
+     utils.py — вспомогательные функции
+     .env — хранить CLIENT_ID, CLIENT_SECRET
+     README.md — инструкция запуска
+
+3. Основной функционал CLI:
+   Команда:
+      python main.py summary --file messages.txt
+   или:
+      python main.py summary --text "любые сообщения"
+
+4. Приложение должно:
+   - Читать текст из файла или аргумента --text
+   - Отправлять его в GigaChat API
+   - Получать краткую выжимку (summary)
+   - Выводить на экран
+
+5. Реализовать модуль gigachat.py:
+   - функция get_access_token() — получает OAuth токен
+   - функция generate_summary(text: str) — делает запрос к GigaChat chat/completions
+   - Обработка ошибок API и удобные исключения
+
+6. Параметры GigaChat:
+   - POST https://gigachat.devices.sberbank.ru/api/v1/oauth
+   - POST https://gigachat.devices.sberbank.ru/api/v1/chat/completions
+   - Все запросы отправлять в JSON
+   - Использовать модель GigaChat
+
+7. Формат запроса в chat/completions:
+      {
+        "model": "GigaChat",
+        "messages": [
+          {"role": "system", "content": "Ты – ассистент, который делает краткие выжимки текста."},
+          {"role": "user", "content": "<текст сообщений>"}
+        ]
+      }
+
+8. CLI-компонент:
+   - Команда summary
+   - Параметры:
+        --file <путь>
+        --text "<строка>"
+   - Если указаны оба — приоритет у --text
+   - Если ничего нет — выводить ошибку и help
+
+9. Код должен:
+   - быть асинхронным не обязательно — можно синхронный requests
+   - включать обработку ошибок API
+   - логировать только ключевые шаги
+   - быть максимально простым и понятным начинающему
+
+10. Финальный результат:
+   Cursor должен сгенерировать весь проект целиком, полностью рабочий и готовый к запуску.

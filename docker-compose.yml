@@ -1,0 +1,9 @@
+services:
+  zlatahelp:
+    build: .
+    env_file: .env
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

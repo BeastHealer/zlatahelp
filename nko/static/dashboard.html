@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zlatahelp — ассистент НКО</title>
+  <style>
+    :root {
+      --ink: #142033;
+      --muted: #5c6b7a;
+      --line: #d5deea;
+      --paper: #eef3f8;
+      --card: #ffffff;
+      --blue: #1f4e79;
+      --wait: #8a4b08;
+      --bad: #8d2b2b;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", sans-serif; color: var(--ink); background: var(--paper); }
+    header { display: flex; justify-content: space-between; gap: 16px; padding: 20px 28px; background: var(--blue); color: white; }
+    header p { margin: 4px 0 0; color: #d5e4f2; }
+    h1 { font-size: 22px; margin: 0; font-weight: 650; }
+    main { display: grid; grid-template-columns: 340px 1fr 320px; gap: 16px; padding: 16px; }
+    section { background: var(--card); border: 1px solid var(--line); padding: 16px; }
+    h2 { font-size: 15px; margin: 16px 0 8px; }
+    h2:first-child { margin-top: 0; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+    textarea, input { width: 100%; border: 1px solid var(--line); padding: 8px; font: inherit; }
+    textarea { min-height: 68px; resize: vertical; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    button { border: 1px solid var(--blue); background: var(--blue); color: white; padding: 8px 10px; cursor: pointer; font: inherit; }
+    button.ghost { background: white; color: var(--blue); }
+    .event { border-top: 1px solid var(--line); padding: 10px 0; white-space: pre-wrap; }
+    .kind { font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+    .waiting { color: var(--wait); }
+    .error { color: var(--bad); }
+    .task, .item { padding: 8px 0; border-top: 1px solid var(--line); }
+    .banner { padding: 10px; background: #fff4e4; color: var(--wait); }
+    a { color: var(--blue); }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Zlatahelp</h1>
+      <p>Ассистент руководителя НКО. Notion, календарь и письма ждут отдельного «да».</p>
+    </div>
+    <div id="browser"></div>
+  </header>
+  <main>
+    <section>
+      <h2>Поручение</h2>
+      <label for="voice">Голос, уже расшифрованный</label>
+      <textarea id="voice" placeholder="Найди гранты на цифровизацию"></textarea>
+      <label for="text">Текст</label>
+      <textarea id="text"></textarea>
+      <label for="image">Что на фото</label>
+      <input id="image" placeholder="афиша конкурса, дедлайн, город">
+      <label for="doc">Письмо или вложение</label>
+      <textarea id="doc"></textarea>
+      <div class="row">
+        <button id="send" type="button">Отправить</button>
+        <button id="yes" class="ghost" type="button">Да</button>
+        <button id="no" class="ghost" type="button">Нет</button>
+        <button id="stop" class="ghost" type="button">Стоп</button>
+      </div>
+      <div class="row">
+        <button id="grant" class="ghost" type="button">Гранты</button>
+        <button id="calendar" class="ghost" type="button">Календарь</button>
+        <button id="letter" class="ghost" type="button">Письмо</button>
+        <button id="research" class="ghost" type="button">Отчётность</button>
+        <button id="base" class="ghost" type="button">Контакты</button>
+        <button id="login" class="ghost" type="button">Вход в Notion</button>
+      </div>
+    </section>
+    <section>
+      <h2>Ход задачи</h2>
+      <div id="feed"></div>
+    </section>
+    <section>
+      <h2>Notion, календарь, память</h2>
+      <div id="side"></div>
+    </section>
+  </main>
+  <script>
+    const feed = document.querySelector("#feed");
+    const side = document.querySelector("#side");
+    const browser = document.querySelector("#browser");
+    const letterSample = "Тема: Софинансирование по договору 14\nПросим подтвердить софинансирование 180000 рублей по договору 14 до пятницы.\n";
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch]));
+    }
+
+    function draw(state) {
+      const events = state.events || [];
+      feed.innerHTML = events.map((item) => `
+        <div class="event">
+          <div class="kind ${esc(item.kind)}">${esc(item.kind)}</div>
+          <div>${esc(item.text)}</div>
+        </div>`).join("") || "<p>Пока пусто. Запустите сценарий слева.</p>";
+      const tasks = (state.tasks || []).map((task) => `
+        <div class="task"><b>${esc(task.status)}</b> · ${esc(task.title)}<br>${esc(task.wait_reason || task.phase)}</div>`).join("");
+      const memory = (state.memory || []).map((item) => `<div class="item">${esc(item.key)}: ${esc(item.value)}</div>`).join("") || "<div class=\"item\">Память пуста</div>";
+      const notion = (state.notion || []).map((item) => `<div class="item"><a href="/notion/${esc(item.id)}">${esc(item.title)}</a></div>`).join("") || "<div class=\"item\"><a href=\"/notion\">Пока пусто</a></div>";
+      const calendar = (state.calendar || []).map((item) => `<div class="item">${esc(item.start_at)} · ${esc(item.title)}</div>`).join("");
+      side.innerHTML = `<h2>Задачи</h2>${tasks}<h2>Notion</h2>${notion}<h2>Календарь</h2>${calendar}<p><a href="/calendar.ics">Скачать ICS</a></p><h2>Память</h2>${memory}`;
+      const session = state.browser || {};
+      browser.innerHTML = session.needs_user
+        ? `<div class="banner">Нужен вход. ${esc(session.reason || "")}</div>`
+        : `<p>Последняя страница:<br>${esc(session.last_url || "ещё не открывал")}</p>`;
+      feed.scrollTop = feed.scrollHeight;
+    }
+
+    async function post(url, payload) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload || {}),
+      });
+      const data = await response.json();
+      draw(data.state);
+    }
+
+    async function send(extra) {
+      await post("/api/message", extra || {
+        text: document.querySelector("#text").value,
+        voice_transcript: document.querySelector("#voice").value,
+        image_note: document.querySelector("#image").value,
+        document_text: document.querySelector("#doc").value,
+      });
+    }
+
+    document.querySelector("#send").onclick = () => send();
+    document.querySelector("#yes").onclick = () => send({ text: "да" });
+    document.querySelector("#no").onclick = () => send({ text: "нет" });
+    document.querySelector("#stop").onclick = () => post("/api/cancel", {});
+    document.querySelector("#grant").onclick = () => send({
+      voice_transcript: "Найди гранты на цифровизацию до 500000 и запиши подборку в Notion. Я в Казани.",
+      image_note: "афиша конкурса, Казань",
+    });
+    document.querySelector("#calendar").onclick = () => send({ text: "Поставь встречу правления в четверг в 11." });
+    document.querySelector("#letter").onclick = () => send({
+      text: "Разбери письмо и подготовь ответ",
+      document_name: "letter.txt",
+      document_text: letterSample,
+    });
+    document.querySelector("#research").onclick = () => send({ text: "Что изменилось в отчётности НКО в 2026?" });
+    document.querySelector("#base").onclick = () => send({ text: "Кто ведёт волонтёров в Казани?" });
+    document.querySelector("#login").onclick = () => send({ text: "Открой кабинет Notion" });
+    fetch("/api/state").then((response) => response.json()).then(draw);
+  </script>
+</body>
+</html>

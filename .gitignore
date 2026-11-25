@@ -1,0 +1,50 @@
+# Виртуальные окружения
+.venv/
+venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Telegram бот
+*.session
+telegram_messages.db
+telegram_bot.log
+
+# AI проект
+ai/.env
+*.log
+
+# Telethon проект
+telethon/.env
+
+# Telebot Bot проект
+telebot_bot/.env
+
+# GigaChat Bot проект
+gigachat_bot/.env
+
+# Ассистент НКО
+.env
+data/
+
+# Локальные ключи Telegram, не для GitHub
+config_local.py
+telebot_bot/config_local.py
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
