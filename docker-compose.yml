@@ -7,3 +7,16 @@ services:
     volumes:
       - ./data:/data
     restart: unless-stopped
+
+  zlatahelp2:
+    build: .
+    command: ["python", "-m", "nko2"]
+    env_file: .env
+    environment:
+      PORT_V2: "8091"
+      DATA_DIR: /data
+    ports:
+      - "8091:8091"
+    volumes:
+      - ./data2:/data
+    restart: unless-stopped

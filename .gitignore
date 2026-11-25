@@ -32,6 +32,7 @@ gigachat_bot/.env
 # Ассистент НКО
 .env
 data/
+data2/
 
 # Локальные ключи Telegram, не для GitHub
 config_local.py

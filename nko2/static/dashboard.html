@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zlatahelp 2 — Yonote</title>
+  <style>
+    :root { --ink: #1c1410; --muted: #6b5346; --line: #eadfd4; --paper: #f7f1ea; --card: #fff; --accent: #8c3a2f; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", sans-serif; color: var(--ink); background: var(--paper); }
+    header { display: flex; justify-content: space-between; gap: 16px; padding: 20px 28px; background: var(--accent); color: white; }
+    header p { margin: 4px 0 0; color: #f3d7d1; }
+    h1 { margin: 0; font-size: 22px; }
+    main { display: grid; grid-template-columns: 340px 1fr 320px; gap: 16px; padding: 16px; }
+    section { background: var(--card); border: 1px solid var(--line); padding: 16px; }
+    h2 { font-size: 15px; margin: 16px 0 8px; }
+    h2:first-child { margin-top: 0; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+    textarea { width: 100%; border: 1px solid var(--line); padding: 8px; font: inherit; min-height: 64px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    button { border: 1px solid var(--accent); background: var(--accent); color: white; padding: 8px 10px; cursor: pointer; font: inherit; }
+    button.ghost { background: white; color: var(--accent); }
+    .event { border-top: 1px solid var(--line); padding: 10px 0; white-space: pre-wrap; }
+    .kind { font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+    .item { padding: 8px 0; border-top: 1px solid var(--line); }
+    a { color: var(--accent); }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Zlatahelp 2</h1>
+      <p>Yonote, почта, Telegram и VK. Публикация только после «да». Сервисы доступны из России.</p>
+    </div>
+  </header>
+  <main>
+    <section>
+      <h2>Поручение</h2>
+      <label for="text">Текст или расшифровка голоса</label>
+      <textarea id="text" placeholder="Собери, что нового"></textarea>
+      <div class="row">
+        <button id="send" type="button">Отправить</button>
+        <button id="yes" class="ghost" type="button">Да</button>
+        <button id="no" class="ghost" type="button">Нет</button>
+        <button id="stop" class="ghost" type="button">Стоп</button>
+      </div>
+      <div class="row">
+        <button id="digest" class="ghost" type="button">Сводка</button>
+        <button id="weekly" class="ghost" type="button">Отчёт недели</button>
+        <button id="search" class="ghost" type="button">Гранты</button>
+        <button id="announce" class="ghost" type="button">Анонс</button>
+        <button id="tip" class="ghost" type="button">Совет</button>
+        <button id="story" class="ghost" type="button">История</button>
+        <button id="remind" class="ghost" type="button">Напоминание</button>
+      </div>
+    </section>
+    <section>
+      <h2>Ход задачи</h2>
+      <div id="feed"></div>
+    </section>
+    <section>
+      <h2>Yonote и планы</h2>
+      <div id="side"></div>
+    </section>
+  </main>
+  <script>
+    const feed = document.querySelector("#feed");
+    const side = document.querySelector("#side");
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch]));
+    }
+
+    function draw(state) {
+      const events = state.events || [];
+      feed.innerHTML = events.map((item) => `
+        <div class="event"><div class="kind">${esc(item.kind)}</div><div>${esc(item.text)}</div></div>
+      `).join("") || "<p>Пока пусто. Запустите сценарий слева.</p>";
+      const tasks = (state.tasks || []).map((task) => `<div class="item"><b>${esc(task.status)}</b> · ${esc(task.title)}</div>`).join("");
+      const pages = (state.yonote || []).map((item) => `<div class="item"><a href="/yonote/${esc(item.id)}">${esc(item.title)}</a></div>`).join("") || "<div class=\"item\"><a href=\"/yonote\">Пока пусто</a></div>";
+      const plans = (state.activities || []).filter((item) => item.status === "planned").map((item) => `<div class="item">${esc(item.when_on)} · ${esc(item.title)}</div>`).join("");
+      const reminders = (state.reminders || []).map((item) => `<div class="item">${esc(item.due_at)} · ${esc(item.text)}</div>`).join("") || "<div class=\"item\">Нет</div>";
+      side.innerHTML = `<h2>Задачи</h2>${tasks}<h2>Yonote</h2>${pages}<h2>Планы</h2>${plans}<h2>Напоминания</h2>${reminders}`;
+    }
+
+    async function post(url, payload) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload || {}),
+      });
+      draw((await response.json()).state);
+    }
+
+    function send(text) {
+      return post("/api/message", { text: text ?? document.querySelector("#text").value });
+    }
+
+    document.querySelector("#send").onclick = () => send();
+    document.querySelector("#yes").onclick = () => send("да");
+    document.querySelector("#no").onclick = () => send("нет");
+    document.querySelector("#stop").onclick = () => post("/api/cancel", {});
+    document.querySelector("#digest").onclick = () => send("Собери, что нового в Yonote, Telegram, VK и почте");
+    document.querySelector("#weekly").onclick = () => send("Собери еженедельный отчёт: что сделано и что в планах");
+    document.querySelector("#search").onclick = () => send("Найди гранты и мероприятия по словам цифровизация и партнёрство");
+    document.querySelector("#announce").onclick = () => send("Напиши анонс вебинара для Telegram и VK");
+    document.querySelector("#tip").onclick = () => send("Напиши совет для Telegram и VK");
+    document.querySelector("#story").onclick = () => send("Напиши историю про волонтёров для Telegram и VK");
+    document.querySelector("#remind").onclick = () => send("напомни завтра в 10 о вебинаре");
+    fetch("/api/state").then((response) => response.json()).then(draw);
+  </script>
+</body>
+</html>
