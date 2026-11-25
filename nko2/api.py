@@ -13,6 +13,7 @@ from nko2.models import Incoming
 from nko2.textutil import esc
 
 DASHBOARD = Path(__file__).resolve().parent / "static" / "dashboard.html"
+VK_CHAT = Path(__file__).resolve().parent / "static" / "vk.html"
 
 
 class MessageIn(BaseModel):
@@ -38,6 +39,10 @@ def create_app(assistant: Assistant) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def dashboard() -> str:
         return DASHBOARD.read_text(encoding="utf-8")
+
+    @app.get("/vk", response_class=HTMLResponse)
+    def vk_chat() -> str:
+        return VK_CHAT.read_text(encoding="utf-8")
 
     @app.get("/api/state")
     def state() -> dict:

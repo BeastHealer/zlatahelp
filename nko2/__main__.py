@@ -1,4 +1,4 @@
-"""Панель второй версии и Telegram, если задан токен."""
+"""Панель второй версии, Telegram и чат VK, если заданы токены."""
 
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ def build() -> tuple[object, Assistant]:
 def main() -> None:
     settings, assistant = build()
     app = create_app(assistant)
-    if settings.telegram_token:
-        from nko2.telegram_bot import serve
+    if settings.telegram_token or (settings.vk_token and settings.vk_group_id):
+        from nko2.runtime import serve
 
         asyncio.run(serve(app, settings, assistant))
         return

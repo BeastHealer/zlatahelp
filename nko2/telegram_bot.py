@@ -1,8 +1,12 @@
-"""Telegram руководителя: текст, голос, фото и файл. Чужой чат отклоняется."""
+"""Telegram руководителя: текст, голос, фото и файл. Чужой чат отклоняется.
+
+Если api.telegram.org не отвечает, панель на порту второй версии продолжает работать.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
 import uvicorn
@@ -13,6 +17,8 @@ from nko.access import allowed_chat
 from nko2.assistant import Assistant
 from nko2.config import Settings
 from nko2.models import Incoming, Outbound
+
+logger = logging.getLogger(__name__)
 
 
 def transcribe(path: Path, settings: Settings) -> str:
@@ -130,8 +136,38 @@ def build_dispatcher(settings: Settings, assistant: Assistant, bot: Bot) -> Disp
     return dispatcher
 
 
+async def polling_loop(settings: Settings, assistant: Assistant, stop: asyncio.Event | None = None) -> None:
+    """Опрос Telegram. Сетевая ошибка не останавливает панель: ждём и пробуем снова."""
+    stop = stop or asyncio.Event()
+    delay = 5
+    while not stop.is_set():
+        bot = Bot(settings.telegram_token)
+        dispatcher = build_dispatcher(settings, assistant, bot)
+        try:
+            await dispatcher.start_polling(bot, handle_signals=False)
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Telegram недоступен (%s). Панель продолжает работу.", exc.__class__.__name__)
+            try:
+                await bot.session.close()
+            except Exception as close_exc:
+                logger.warning("Сессия Telegram не закрылась (%s).", close_exc.__class__.__name__)
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=delay)
+            except asyncio.TimeoutError:
+                delay = min(delay * 2, 60)
+
+
 async def serve(app, settings: Settings, assistant: Assistant) -> None:
-    bot = Bot(settings.telegram_token)
-    dispatcher = build_dispatcher(settings, assistant, bot)
     server = uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, loop="asyncio"))
-    await asyncio.gather(server.serve(), dispatcher.start_polling(bot))
+    polling = asyncio.create_task(polling_loop(settings, assistant))
+    try:
+        await server.serve()
+    finally:
+        polling.cancel()
+        try:
+            await polling
+        except asyncio.CancelledError:
+            pass

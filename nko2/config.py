@@ -38,6 +38,7 @@ class Settings:
     imap_password: str
     search_engine: str
     keywords: str
+    vk_user_id: str = ""
 
     @property
     def db_path(self) -> Path:
@@ -77,6 +78,7 @@ def load_settings() -> Settings:
         yonote_collection_id=os.getenv("YONOTE_COLLECTION_ID", "").strip(),
         vk_token=os.getenv("VK_TOKEN", "").strip(),
         vk_group_id=os.getenv("VK_GROUP_ID", "").strip(),
+        vk_user_id=os.getenv("VK_USER_ID", "").strip(),
         imap_host=os.getenv("IMAP_HOST", "").strip(),
         imap_user=os.getenv("IMAP_USER", "").strip(),
         imap_password=os.getenv("IMAP_PASSWORD", "").strip(),

@@ -235,6 +235,15 @@ class Database:
             raise KeyError(approval_id)
         return self._approval(row)
 
+    def update_approval_payload(self, approval_id: str, payload: dict) -> dict:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE approvals SET payload_json=?, updated_at=? WHERE id=?",
+                (json.dumps(payload, ensure_ascii=False), now_iso(), approval_id),
+            )
+            self._conn.commit()
+        return self.get_approval(approval_id)
+
     def mark_approval(self, approval_id: str, status: str, receipt: str = "") -> dict:
         with self._lock:
             self._conn.execute(

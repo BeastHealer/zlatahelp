@@ -74,9 +74,16 @@ def vk_wall(settings: Settings, message: str) -> str:
     return str((payload.get("response") or {}).get("post_id") or "")
 
 
+def telegram_reachable(settings: Settings) -> None:
+    response = httpx.get(_telegram_url(settings, "getMe"), timeout=8)
+    response.raise_for_status()
+    if not response.json().get("ok"):
+        raise ValueError("telegram")
+
+
 def telegram_channel(settings: Settings, message: str) -> str:
     response = httpx.post(
-        f"https://api.telegram.org/bot{settings.telegram_token}/sendMessage",
+        _telegram_url(settings, "sendMessage"),
         json={"chat_id": settings.telegram_channel_id, "text": message[:4000]},
         timeout=20,
     )
@@ -113,6 +120,10 @@ def read_imap(settings: Settings, limit: int = 10) -> list[dict]:
             mailbox.logout()
         except imaplib.IMAP4.error:
             pass
+
+
+def _telegram_url(settings: Settings, method: str) -> str:
+    return f"https://api.telegram.org/bot{settings.telegram_token}/{method}"
 
 
 def _yonote_headers(settings: Settings) -> dict[str, str]:

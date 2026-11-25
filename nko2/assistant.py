@@ -11,7 +11,7 @@ from nko2.config import Settings
 from nko2.db import Database
 from nko2.models import Incoming, Outbound
 from nko2.policy import render_digest, render_opportunities, render_post, render_weekly
-from nko2.sources import read_imap, telegram_channel, vk_wall, yonote_create, yonote_search
+from nko2.sources import read_imap, telegram_channel, telegram_reachable, vk_wall, yonote_create, yonote_search
 from nko2.textutil import (
     compose,
     detect_skill,
@@ -97,6 +97,7 @@ class Assistant:
             "org": self.settings.org_name,
             "tasks": self.db.recent_tasks(user_id),
             "events": self.db.recent_events(user_id),
+            "draft": self._pending_draft(user_id),
             "memory": self.db.memory_all(user_id),
             "reminders": self.db.pending_reminders(user_id),
             "yonote": self.db.yonote_pages(),
@@ -145,6 +146,8 @@ class Assistant:
             self.db.update_task(task["id"], status="done", phase="done", wait_reason="", result="Владелец отклонил.")
             return self._emit(task["id"], [Outbound("result", "Не записываю и не публикую.")])
         if not is_yes(text):
+            if pending[0]["kind"] == "publish":
+                return self._revise_post(task, pending[0], text)
             return self._emit(task["id"], [Outbound("waiting", "Нужно «да» или «нет».")])
         return self._emit(task["id"], [self._commit(task, pending[0])])
 
@@ -193,7 +196,10 @@ class Assistant:
         task = self._begin(message, text, f"Пост: {kind}", "post")
         telegram, vk = render_post(kind, fact, self.settings.leader_name, self.settings.org_name)
         draft = f"Telegram:\n{telegram}\n\nVK:\n{vk}"
-        closing = "Публикация ещё не ушла. Напишите «да», чтобы опубликовать в Telegram и VK один раз."
+        closing = (
+            "Публикация ещё не ушла. Можно прислать исправленный текст: в каналы уйдёт он. "
+            "«Да» отправит текущий вариант один раз."
+        )
         payload = {"telegram": telegram, "vk": vk, "body": draft, "subject": fact["title"], "kind": kind}
         approval = self.db.create_approval(message.user_id, task["id"], "publish", payload, f"publish|{kind}|{fact['title']}")
         if approval["status"] == "sent":
@@ -262,6 +268,32 @@ class Assistant:
         self.db.update_task(task["id"], status="waiting_user", phase="wait_approval", wait_reason="Нужно подтверждение записи в Yonote.", result="")
         return self._emit(task["id"], [Outbound("waiting", shown)])
 
+    def _revise_post(self, task: dict, approval: dict, text: str) -> list[Outbound]:
+        cleaned = text.strip()
+        if not cleaned:
+            return self._emit(task["id"], [Outbound("waiting", "Пустой текст не подставляю. Пришлите исправленное сообщение или «да».")])
+        payload = dict(approval["payload"])
+        payload["telegram"] = cleaned
+        payload["vk"] = cleaned
+        payload["body"] = cleaned
+        self.db.update_approval_payload(approval["id"], payload)
+        shown = (
+            f"{cleaned}\n\nЧерновик заменила на ваш текст. Публикация ещё не ушла. "
+            "Можно прислать ещё правку или написать «да»."
+        )
+        self.db.update_task(task["id"], status="waiting_user", phase="wait_approval", wait_reason="Нужно одобрение публикации.", result="")
+        return self._emit(task["id"], [Outbound("waiting", shown)])
+
+    def _pending_draft(self, user_id: str) -> dict | None:
+        task = self.db.active_waiting(user_id)
+        if task is None or task["phase"] != "wait_approval":
+            return None
+        pending = [item for item in self.db.approvals_for_task(task["id"]) if item["status"] == "pending" and item["kind"] == "publish"]
+        if not pending:
+            return None
+        payload = pending[0]["payload"]
+        return {"text": payload.get("telegram") or payload.get("body") or "", "kind": "publish"}
+
     def _commit(self, task: dict, approval: dict) -> Outbound:
         if approval["status"] == "sent":
             return Outbound("result", f"Уже выполнено, квитанция {approval['receipt']}. Повторно не делаю.")
@@ -275,12 +307,10 @@ class Assistant:
                 receipt = f"yonote-{page['id']}"
                 message = f"Записала в Yonote один раз, квитанция {receipt}."
             elif approval["kind"] == "publish":
-                if self.settings.vk_token and self.settings.vk_group_id:
-                    vk_wall(self.settings, payload["vk"])
-                if self.settings.telegram_token and self.settings.telegram_channel_id:
-                    telegram_channel(self.settings, payload["telegram"])
                 receipt = f"post-{approval['id']}"
-                message = f"Опубликовала в Telegram и VK один раз, квитанция {receipt}."
+                message = self._publish(payload, receipt)
+                if message is None:
+                    return Outbound("error", "VK не принял публикацию. Квитанцию не ставлю, можно снова написать «да».")
             else:
                 return Outbound("error", "Не знаю, как подтвердить это действие.")
         except (httpx.HTTPError, OSError, ValueError) as exc:
@@ -301,7 +331,49 @@ class Assistant:
                 items.extend(read_imap(self.settings))
             except (imaplib_error(), OSError) as exc:
                 items.append({"source": "mail", "title": "Почта", "body": "", "ok": 0, "reason": exc.__class__.__name__})
+        if self.settings.telegram_token:
+            try:
+                telegram_reachable(self.settings)
+            except (httpx.HTTPError, OSError, ValueError):
+                items.append(
+                    {
+                        "source": "telegram",
+                        "title": "канал",
+                        "body": "",
+                        "ok": 0,
+                        "reason": "Telegram недоступен, остальные источники разбираю дальше",
+                    }
+                )
         return items
+
+    def _publish(self, payload: dict, receipt: str) -> str | None:
+        vk_on = bool(self.settings.vk_token and self.settings.vk_group_id)
+        telegram_on = bool(self.settings.telegram_token and self.settings.telegram_channel_id)
+        vk_ok = False
+        telegram_ok = False
+        if vk_on:
+            try:
+                vk_wall(self.settings, payload["vk"])
+                vk_ok = True
+            except (httpx.HTTPError, OSError, ValueError):
+                vk_ok = False
+        if telegram_on:
+            try:
+                telegram_channel(self.settings, payload["telegram"])
+                telegram_ok = True
+            except (httpx.HTTPError, OSError, ValueError):
+                telegram_ok = False
+        if vk_on and not vk_ok and not telegram_ok:
+            return None
+        if not vk_on and not telegram_on:
+            return f"Опубликовала в Telegram и VK один раз, квитанция {receipt}."
+        if vk_on and not vk_ok and telegram_ok:
+            return f"VK не принял публикацию. В Telegram опубликовала один раз, квитанция {receipt}."
+        if telegram_on and not telegram_ok:
+            where = "VK" if vk_ok else "исходящие"
+            return f"Telegram недоступен, в канал не отправляла. В {where} опубликовала один раз, квитанция {receipt}."
+        delivered = [name for name, ok in (("Telegram", telegram_ok), ("VK", vk_ok)) if ok]
+        return f"Опубликовала в {' и '.join(delivered)} один раз, квитанция {receipt}."
 
     def _nearest_plan(self) -> dict | None:
         today = self.settings.today

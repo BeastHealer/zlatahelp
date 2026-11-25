@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Чат VK — Zlatahelp 2</title>
+  <style>
+    :root { --vk: #0077ff; --bg: #edeef0; --mine: #cce4ff; --paper: #ffffff; --ink: #1a1a1a; --muted: #818c99; }
+    * { box-sizing: border-box; }
+    body { margin: 0; height: 100vh; font-family: "Segoe UI", sans-serif; color: var(--ink); background: #d3d9e0; }
+    .app { max-width: 760px; height: 100vh; margin: 0 auto; display: flex; flex-direction: column; background: var(--bg); }
+    header { background: var(--vk); color: white; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    header a { color: white; }
+    h1 { margin: 0; font-size: 18px; font-weight: 600; }
+    header p { margin: 2px 0 0; font-size: 13px; color: #d6e6ff; }
+    .log { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+    .bubble { max-width: 78%; padding: 8px 12px; white-space: pre-wrap; line-height: 1.35; }
+    .user { margin-left: auto; background: var(--mine); border-radius: 14px 14px 4px 14px; }
+    .result, .progress { margin-right: auto; background: var(--paper); border-radius: 14px 14px 14px 4px; }
+    .waiting { margin-right: auto; background: #fff6dd; border-radius: 14px 14px 14px 4px; }
+    .error { margin-right: auto; background: #ffd6d6; border-radius: 14px 14px 14px 4px; }
+    .chips { display: flex; gap: 8px; overflow: auto; padding: 8px 12px 0; background: var(--paper); }
+    .chips button { border: 0; background: #f0f2f5; color: var(--ink); border-radius: 16px; padding: 6px 10px; cursor: pointer; font: inherit; white-space: nowrap; }
+    form { display: flex; gap: 8px; padding: 12px; background: var(--paper); }
+    textarea { flex: 1; resize: none; border: 0; background: #f0f2f5; border-radius: 18px; padding: 10px 14px; font: inherit; min-height: 40px; }
+    form button { border: 0; background: var(--vk); color: white; border-radius: 18px; padding: 0 16px; cursor: pointer; font: inherit; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <h1>АНО «Злата»</h1>
+        <p>Чат сообщества VK. Публикация только после «да».</p>
+      </div>
+      <a href="/">Панель</a>
+    </header>
+    <div id="log" class="log"></div>
+    <div class="chips">
+      <button type="button" data-skill data-text="Собери, что нового в Yonote, Telegram, VK и почте">Сводка</button>
+      <button type="button" data-skill data-text="Собери еженедельный отчёт: что сделано и что в планах">Отчёт</button>
+      <button type="button" data-skill data-text="Найди гранты и мероприятия по словам цифровизация и партнёрство">Гранты</button>
+      <button type="button" data-skill data-text="Напиши анонс вебинара для Telegram и VK">Анонс</button>
+      <button type="button" data-text="да">Да</button>
+      <button type="button" data-text="нет">Нет</button>
+      <button type="button" id="stop" data-text="">Стоп</button>
+    </div>
+    <form id="composer">
+      <textarea id="text" rows="1" placeholder="Сообщение"></textarea>
+      <button type="submit">Отправить</button>
+    </form>
+  </div>
+  <script>
+    const log = document.querySelector("#log");
+    const text = document.querySelector("#text");
+    let shownDraft = "";
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch]));
+    }
+
+    function draw(state) {
+      const events = state.events || [];
+      log.innerHTML = events.map((item) => `<div class="bubble ${esc(item.kind)}">${esc(item.text)}</div>`).join("")
+        || "<div class=\"bubble result\">Напишите поручение. Сводка, отчёт, гранты и посты приходят сюда.</div>";
+      log.scrollTop = log.scrollHeight;
+      const draft = (state.draft && state.draft.text) || "";
+      document.querySelectorAll(".chips button[data-skill]").forEach((button) => {
+        button.hidden = Boolean(draft);
+      });
+      text.placeholder = draft ? "Исправьте текст и отправьте" : "Сообщение";
+      if (document.activeElement !== text && (text.value === "" || text.value === shownDraft)) {
+        text.value = draft;
+      }
+      shownDraft = draft;
+    }
+
+    async function post(url, payload) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload || {}),
+      });
+      draw((await response.json()).state);
+    }
+
+    function send(value) {
+      const message = (value ?? text.value).trim();
+      if (!message) return;
+      text.value = "";
+      return post("/api/message", { text: message });
+    }
+
+    document.querySelector("#composer").addEventListener("submit", (event) => {
+      event.preventDefault();
+      send();
+    });
+    text.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        send();
+      }
+    });
+    document.querySelectorAll(".chips button").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.id === "stop") post("/api/cancel", {});
+        else send(button.getAttribute("data-text"));
+      });
+    });
+    fetch("/api/state").then((response) => response.json()).then(draw);
+  </script>
+</body>
+</html>
